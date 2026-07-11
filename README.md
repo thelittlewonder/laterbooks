@@ -104,7 +104,7 @@ Render deploys from a Git repo. Push this project to GitHub if you haven't alrea
 2. Set **Runtime** to **Docker**
 3. **Dockerfile path:** `backend/Dockerfile`
 4. **Docker build context:** `backend`
-5. **Plan:** Standard (2 GB RAM minimum — Starter is too small for OCR + Chromium)
+5. **Plan:** Free (512 MB RAM — may be tight for OCR + Chromium; upgrade if uploads crash)
 
 ### 3. Set environment variables
 
@@ -190,7 +190,7 @@ Render restarts automatically. Now the frontend can call the API.
 
 ### Render notes
 
-- **Plan:** Use **Standard** (2 GB RAM). Starter (512 MB) will likely OOM during OCR or Playwright.
+- **Plan:** Free tier (512 MB RAM). First deploy may work; heavy OCR/Playwright jobs can OOM — upgrade to Standard if that happens.
 - **Cold starts:** Free/idle services spin down; first request after idle can take 30–60s.
 - **Job state:** In-memory — active jobs are lost if Render restarts or redeploys.
 - **Goodreads login:** If Amazon blocks headless login, you may need to debug locally with `PLAYWRIGHT_HEADLESS=false`; Render cannot run a visible browser.

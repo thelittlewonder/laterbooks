@@ -1,0 +1,13 @@
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback — adapter-static outputs 200.html for Netlify
+[[redirects]]
+  from = "/*"
+  to = "/200.html"
+  status = 200

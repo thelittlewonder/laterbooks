@@ -1,0 +1,20 @@
+# Render Blueprint — deploy from repo root via Dashboard → New → Blueprint
+services:
+  - type: web
+    name: shelfie-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      - key: GOODREADS_EMAIL
+        sync: false
+      - key: GOODREADS_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PLAYWRIGHT_HEADLESS
+        value: "true"
+      - key: UPLOAD_DIR
+        value: /tmp/uploads

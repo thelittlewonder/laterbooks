@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+uploads/
+
+# Node
+node_modules/
+.svelte-kit/
+build/
+dist/
+
+# OS
+.DS_Store
+
+# IDE
+.cursor/
+.vscode/
+!.vscode/extensions.json

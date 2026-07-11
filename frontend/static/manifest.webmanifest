@@ -1,0 +1,30 @@
+{
+	"name": "shelfie",
+	"short_name": "shelfie",
+	"description": "Sync book cover photos to your Goodreads Want to Read shelf",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#f5f5f4",
+	"theme_color": "#1c1917",
+	"orientation": "portrait",
+	"icons": [
+		{
+			"src": "/icons/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
+}

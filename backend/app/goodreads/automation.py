@@ -114,6 +114,13 @@ class GoodreadsAutomation:
         )
         await page.wait_for_timeout(2000)
 
+        if settings.goodreads_login_method == "goodreads":
+            await self._login_goodreads_email(page)
+            return
+
+        await self._login_amazon(page)
+
+    async def _login_goodreads_email(self, page: Page) -> None:
         await self._open_goodreads_email_form(page)
 
         if await self._try_goodreads_native_login(page):
@@ -121,7 +128,9 @@ class GoodreadsAutomation:
             logger.info("Logged in to Goodreads with email/password")
             return
 
-        logger.info("Goodreads email form not found — trying Amazon sign-in")
+        await self._raise_login_error(page)
+
+    async def _login_amazon(self, page: Page) -> None:
         await self._click_amazon_sign_in(page)
 
         if "amazon." not in page.url:
@@ -150,45 +159,82 @@ class GoodreadsAutomation:
 
     async def _open_goodreads_email_form(self, page: Page) -> None:
         """Switch from Amazon default to Goodreads email/password form if needed."""
-        native_email = page.locator(
-            'input[name="user[email]"], input#user_email, input#user_sign_in_email'
-        ).first
-        if await native_email.count() > 0 and await native_email.is_visible():
+        if await self._has_native_form(page):
             return
 
-        email_link = page.locator(
-            'a:has-text("email"), a:has-text("Goodreads password"), '
-            'a:has-text("standard sign"), .authPortalMobileMenu a'
-        ).filter(has_not=page.locator('a[href*="amazon"]'))
-        if await email_link.count() > 0:
-            await email_link.first.click()
+        # Links that switch to Goodreads email login (not Amazon)
+        switchers = [
+            page.get_by_role("link", name=re.compile(r"sign in with email", re.I)),
+            page.get_by_role("link", name=re.compile(r"not a member of amazon", re.I)),
+            page.get_by_role("link", name=re.compile(r"goodreads password", re.I)),
+        ]
+        for switcher in switchers:
+            if await switcher.count() > 0:
+                await switcher.first.click()
+                await page.wait_for_timeout(1500)
+                if await self._has_native_form(page):
+                    return
+
+        # Some regions show email form on a direct sign-in tab
+        email_tab = page.locator(
+            'button:has-text("Email"), a:has-text("Email"), [data-tab="email"]'
+        ).first
+        if await email_tab.count() > 0:
+            await email_tab.click()
             await page.wait_for_timeout(1500)
 
-    async def _try_goodreads_native_login(self, page: Page) -> bool:
-        email_input = page.locator(
-            'input[name="user[email]"], input#user_email, input#user_sign_in_email'
-        ).first
-        password_input = page.locator(
-            'input[name="user[password]"], input#user_password, input#user_sign_in_password'
+    async def _has_native_form(self, page: Page) -> bool:
+        email = self._native_email_locator(page)
+        password = self._native_password_locator(page)
+        if await email.count() == 0 or await password.count() == 0:
+            return False
+        try:
+            return await email.is_visible() and await password.is_visible()
+        except Exception:
+            return False
+
+    def _native_email_locator(self, page: Page):
+        return page.locator(
+            'input[name="user[email]"], input#user_email, input#user_sign_in_email, '
+            'input[type="email"]:not(#ap_email)'
         ).first
 
-        if await email_input.count() == 0 or await password_input.count() == 0:
+    def _native_password_locator(self, page: Page):
+        return page.locator(
+            'input[name="user[password]"], input#user_password, '
+            'input#user_sign_in_password, input[type="password"]:not(#ap_password)'
+        ).first
+
+    async def _try_goodreads_native_login(self, page: Page) -> bool:
+        email_input = self._native_email_locator(page)
+        password_input = self._native_password_locator(page)
+
+        try:
+            await email_input.wait_for(state="visible", timeout=10_000)
+            await password_input.wait_for(state="visible", timeout=10_000)
+        except Exception:
+            logger.warning("Goodreads email form not visible at %s", page.url)
             return False
 
         await email_input.fill(settings.goodreads_email)
         await password_input.fill(settings.goodreads_password)
 
         submit = page.locator(
-            'input[type="submit"][name="commit"], '
-            'button[type="submit"]:has-text("Sign in"), '
+            'form[action*="sign_in"] input[type="submit"], '
             'input.authPortalSignInButton, '
-            'form[action*="sign_in"] input[type="submit"]'
+            'button[type="submit"]:has-text("Sign in")'
         ).first
         if await submit.count() == 0:
-            submit = page.locator('input[type="submit"], button[type="submit"]').first
+            submit = page.locator(
+                'input[type="submit"], button[type="submit"]'
+            ).filter(has_not=page.locator("#signInSubmit, #continue"))
 
         await submit.click()
         await page.wait_for_timeout(3000)
+
+        if await page.locator(".flash.error, .errorMessage, #error_message").count() > 0:
+            logger.warning("Goodreads rejected credentials on sign-in form")
+            return False
 
         try:
             await page.wait_for_url(re.compile(r"goodreads\.com"), timeout=30_000)
@@ -260,9 +306,9 @@ class GoodreadsAutomation:
 
         await _save_debug_screenshot(page)
         hint = (
-            "Headless login often fails on cloud servers. "
-            "Run `python scripts/export_goodreads_session.py` on your Mac "
-            "(works with Goodreads email login too), then set GOODREADS_STORAGE_STATE on Render."
+            "Automated login often fails on Render. "
+            "On your Mac run: python scripts/export_goodreads_session.py "
+            "then set GOODREADS_STORAGE_STATE on Render (skip email/password there)."
         )
         msg = f"Goodreads login failed at {page.url}."
         if detail:

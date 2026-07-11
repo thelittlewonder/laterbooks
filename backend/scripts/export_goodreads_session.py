@@ -32,7 +32,13 @@ async def main() -> None:
     print("3. Return here and press Enter\n")
 
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(headless=False)
+    try:
+        browser = await playwright.chromium.launch(headless=False)
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            print("Chromium not installed. Run this first:\n")
+            print("  playwright install chromium\n")
+        raise
     context = await browser.new_context(
         viewport={"width": 1280, "height": 800},
         locale="en-US",

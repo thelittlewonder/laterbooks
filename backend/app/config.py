@@ -1,7 +1,10 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LoginMethod = Literal["goodreads", "amazon"]
 
 
 class Settings(BaseSettings):
@@ -10,6 +13,7 @@ class Settings(BaseSettings):
     goodreads_email: str = ""
     goodreads_password: str = ""
     goodreads_storage_state: str = ""
+    goodreads_login_method: LoginMethod = "goodreads"
     upload_dir: Path = Path("./uploads")
     max_photos: int = 10
     playwright_headless: bool = True

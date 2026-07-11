@@ -1,0 +1,15 @@
+# Ping Render every 14 minutes so the free tier stays warm between visits.
+# Render spins down after ~15 minutes of no traffic.
+name: Render keepalive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake laterbooks API
+        run: curl -fsS --max-time 90 https://laterbooks-api.onrender.com/health

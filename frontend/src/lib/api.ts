@@ -34,6 +34,53 @@ function networkErrorMessage(err: unknown): string {
 	return message;
 }
 
+const WAKE_MAX_WAIT_MS = 120_000;
+const WAKE_RETRY_MS = 3_000;
+
+export type WakeProgress = {
+	attempt: number;
+	elapsedSec: number;
+	message: string;
+};
+
+/** Ping /health until Render free tier has finished cold-starting. */
+export async function wakeBackend(
+	onProgress?: (progress: WakeProgress) => void
+): Promise<void> {
+	const started = Date.now();
+	let attempt = 0;
+
+	while (Date.now() - started < WAKE_MAX_WAIT_MS) {
+		attempt += 1;
+		const elapsedSec = Math.round((Date.now() - started) / 1000);
+		onProgress?.({
+			attempt,
+			elapsedSec,
+			message:
+				attempt === 1
+					? 'Waking up server…'
+					: `Waking up server… (${elapsedSec}s)`
+		});
+
+		try {
+			const response = await fetch(apiUrl('/health'), {
+				signal: AbortSignal.timeout(20_000)
+			});
+			if (response.ok) {
+				return;
+			}
+		} catch {
+			// Render cold start — keep retrying
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, WAKE_RETRY_MS));
+	}
+
+	throw new Error(
+		'Server did not wake up in time (Render free tier can take ~90s). Wait a minute and tap Sync again.'
+	);
+}
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 	try {
 		return await fetch(apiUrl(path), {

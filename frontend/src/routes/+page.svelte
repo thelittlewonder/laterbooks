@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import PhotoPicker from '$lib/components/PhotoPicker.svelte';
 	import UploadButton from '$lib/components/UploadButton.svelte';
 	import FlowStepper from '$lib/components/FlowStepper.svelte';
@@ -6,7 +7,7 @@
 	import LiveProgress from '$lib/components/LiveProgress.svelte';
 	import FinalSummary from '$lib/components/FinalSummary.svelte';
 	import ManualReview from '$lib/components/ManualReview.svelte';
-	import { createJob, pollJob, submitManual } from '$lib/api';
+	import { createJob, pollJob, submitManual, wakeBackend } from '$lib/api';
 	import type { AppPhase, JobProgress, ManualEntry } from '$lib/types';
 
 	let files = $state<File[]>([]);
@@ -15,6 +16,8 @@
 	let progress = $state<JobProgress | null>(null);
 	let error = $state<string | null>(null);
 	let manualSubmitting = $state(false);
+	let syncMessage = $state('Preparing…');
+	let backendAwake = $state(false);
 	let stopPolling: (() => void) | null = null;
 
 	const isBusy = $derived(
@@ -22,6 +25,16 @@
 	);
 
 	const showStepper = $derived(phase !== 'idle');
+
+	onMount(() => {
+		void wakeBackend()
+			.then(() => {
+				backendAwake = true;
+			})
+			.catch(() => {
+				// Will retry when user taps Sync
+			});
+	});
 
 	function reset() {
 		stopPolling?.();
@@ -32,6 +45,7 @@
 		error = null;
 		phase = 'idle';
 		manualSubmitting = false;
+		syncMessage = 'Preparing…';
 	}
 
 	async function handleSync() {
@@ -41,6 +55,15 @@
 		phase = 'uploading';
 
 		try {
+			if (!backendAwake) {
+				syncMessage = 'Waking up server… (Render free tier, first time can take ~60s)';
+				await wakeBackend((update) => {
+					syncMessage = update.message;
+				});
+				backendAwake = true;
+			}
+
+			syncMessage = 'Uploading photos…';
 			const id = await createJob(files);
 			jobId = id;
 			phase = 'processing';
@@ -83,6 +106,11 @@
 		phase = 'processing';
 
 		try {
+			if (!backendAwake) {
+				await wakeBackend();
+				backendAwake = true;
+			}
+
 			await submitManual(jobId, entries);
 			stopPolling?.();
 			stopPolling = pollJob(jobId, (update) => {
@@ -133,7 +161,7 @@
 		{/if}
 
 		{#if phase === 'uploading'}
-			<SyncProgress />
+			<SyncProgress message={syncMessage} />
 		{/if}
 
 		{#if (phase === 'processing' || manualSubmitting) && progress}

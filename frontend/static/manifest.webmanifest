@@ -1,6 +1,6 @@
 {
-	"name": "shelfie",
-	"short_name": "shelfie",
+	"name": "laterbooks",
+	"short_name": "laterbooks",
 	"description": "Sync book cover photos to your Goodreads Want to Read shelf",
 	"start_url": "/",
 	"display": "standalone",

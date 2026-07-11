@@ -10,8 +10,8 @@ export default defineConfig({
 		SvelteKitPWA({
 			registerType: 'autoUpdate',
 			manifest: {
-				name: 'shelfie',
-				short_name: 'shelfie',
+				name: 'laterbooks',
+				short_name: 'laterbooks',
 				description: 'Sync book cover photos to your Goodreads Want to Read shelf',
 				theme_color: '#1c1917',
 				background_color: '#f5f5f4',

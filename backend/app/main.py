@@ -1,4 +1,4 @@
-"""shelfie FastAPI application."""
+"""laterbooks FastAPI application."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="shelfie", version="1.0.0")
+app = FastAPI(title="laterbooks", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

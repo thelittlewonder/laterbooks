@@ -1,7 +1,7 @@
 # Render Blueprint — deploy from repo root via Dashboard → New → Blueprint
 services:
   - type: web
-    name: shelfie-api
+    name: laterbooks-api
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend

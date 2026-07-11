@@ -1,4 +1,4 @@
-# shelfie
+# laterbooks
 
 A personal Progressive Web App that reads book cover photos, extracts titles with OCR, and syncs missing books to your Goodreads **Want to Read** shelf.
 
@@ -114,7 +114,7 @@ In the Render dashboard → your service → **Environment**:
 |----------|--------|
 | `GOODREADS_EMAIL` | Your Goodreads login email |
 | `GOODREADS_PASSWORD` | Your Goodreads password |
-| `CORS_ORIGINS` | Your frontend URL(s), comma-separated, e.g. `https://shelfie.pages.dev,http://localhost:5173` |
+| `CORS_ORIGINS` | Your frontend URL(s), comma-separated, e.g. `https://laterbooks.pages.dev,http://localhost:5173` |
 | `PLAYWRIGHT_HEADLESS` | `true` |
 | `UPLOAD_DIR` | `/tmp/uploads` (already set in `render.yaml`) |
 
@@ -122,10 +122,10 @@ In the Render dashboard → your service → **Environment**:
 
 Render builds the Docker image and starts the service. First deploy takes several minutes (PaddleOCR + Chromium install).
 
-Your API URL will be something like `https://shelfie-api.onrender.com`. Verify:
+Your API URL will be something like `https://laterbooks-api.onrender.com`. Verify:
 
 ```bash
-curl https://shelfie-api.onrender.com/health
+curl https://laterbooks-api.onrender.com/health
 # {"status":"ok"}
 ```
 
@@ -135,7 +135,7 @@ Build the frontend with your Render API URL:
 
 ```bash
 cd frontend
-VITE_API_URL=https://shelfie-api.onrender.com npm run build
+VITE_API_URL=https://laterbooks-api.onrender.com npm run build
 ```
 
 Deploy the built static files wherever you host the PWA (Cloudflare Pages, Netlify, etc.).
@@ -146,7 +146,7 @@ Netlify serves the PWA as a static site with HTTPS (required for iPhone install)
 
 ### 1. Deploy backend first
 
-Follow the Render steps above and note your API URL, e.g. `https://shelfie-api.onrender.com`.
+Follow the Render steps above and note your API URL, e.g. `https://laterbooks-api.onrender.com`.
 
 ### 2. Connect Netlify to GitHub
 
@@ -160,7 +160,7 @@ In Netlify → **Site configuration** → **Environment variables**:
 
 | Variable | Value |
 |----------|--------|
-| `VITE_API_URL` | Your Render API URL, e.g. `https://shelfie-api.onrender.com` |
+| `VITE_API_URL` | Your Render API URL, e.g. `https://laterbooks-api.onrender.com` |
 
 `VITE_*` vars are baked in at build time — redeploy after changing this.
 

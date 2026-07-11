@@ -1,4 +1,4 @@
-"""API routes for shelfie."""
+"""API routes for laterbooks."""
 
 from __future__ import annotations
 

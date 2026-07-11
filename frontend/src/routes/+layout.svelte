@@ -11,7 +11,7 @@
 	<meta name="theme-color" content="#1c1917" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-	<meta name="apple-mobile-web-app-title" content="shelfie" />
+	<meta name="apple-mobile-web-app-title" content="laterbooks" />
 </svelte:head>
 
 <div class="min-h-dvh bg-stone-100 text-stone-900 antialiased">

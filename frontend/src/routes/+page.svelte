@@ -85,13 +85,13 @@
 </script>
 
 <svelte:head>
-	<title>shelfie</title>
+	<title>laterbooks</title>
 	<meta name="description" content="Sync book cover photos to your Goodreads Want to Read shelf" />
 </svelte:head>
 
 <main class="mx-auto min-h-dvh max-w-lg px-4 py-10">
 	<header class="mb-8 text-center">
-		<h1 class="text-2xl font-semibold tracking-tight text-stone-900">shelfie</h1>
+		<h1 class="text-2xl font-semibold tracking-tight text-stone-900">laterbooks</h1>
 		<p class="mt-2 text-sm text-stone-600">
 			Upload book cover photos. Missing titles are added to your Goodreads Want to Read shelf.
 		</p>

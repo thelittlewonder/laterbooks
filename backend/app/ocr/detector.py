@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from paddleocr import PaddleOCR
 
@@ -52,11 +53,67 @@ class TextBlock:
 def _get_ocr() -> PaddleOCR:
     global _ocr
     if _ocr is None:
-        _ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        # PaddleOCR 3.x — show_log and use_angle_cls were removed
+        _ocr = PaddleOCR(
+            lang="en",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=True,
+        )
     return _ocr
 
 
-def _parse_blocks(result: list) -> list[TextBlock]:
+def _poly_bounds(poly: Any) -> tuple[float, float, float]:
+    """Return height, top, and width from a polygon."""
+    points = list(poly)
+    ys = [float(point[1]) for point in points]
+    xs = [float(point[0]) for point in points]
+    height = max(ys) - min(ys)
+    top = min(ys)
+    width = max(xs) - min(xs)
+    return height, top, width
+
+
+def _parse_predict_result(result: list[Any]) -> list[TextBlock]:
+    blocks: list[TextBlock] = []
+
+    for page in result:
+        payload = page.json if hasattr(page, "json") else page
+        if not isinstance(payload, dict):
+            continue
+
+        data = payload.get("res", payload)
+        texts = data.get("rec_texts", [])
+        scores = data.get("rec_scores", [])
+        polys = data.get("rec_polys") or data.get("dt_polys") or []
+
+        for text, score, poly in zip(texts, scores, polys, strict=False):
+            if not text or not str(text).strip():
+                continue
+
+            confidence = float(score)
+            if confidence < 0.5:
+                continue
+
+            height, top, width = _poly_bounds(poly)
+            cleaned = str(text).strip()
+            if len(cleaned) < 2 or width < 20:
+                continue
+
+            blocks.append(
+                TextBlock(
+                    text=cleaned,
+                    confidence=confidence,
+                    height=height,
+                    top=top,
+                )
+            )
+
+    return blocks
+
+
+def _parse_legacy_result(result: list) -> list[TextBlock]:
+    """PaddleOCR 2.x result format."""
     blocks: list[TextBlock] = []
     if not result or not result[0]:
         return blocks
@@ -66,12 +123,7 @@ def _parse_blocks(result: list) -> list[TextBlock]:
         if confidence < 0.5 or not text.strip():
             continue
 
-        ys = [point[1] for point in box]
-        xs = [point[0] for point in box]
-        height = max(ys) - min(ys)
-        top = min(ys)
-        width = max(xs) - min(xs)
-
+        height, top, width = _poly_bounds(box)
         cleaned = text.strip()
         if len(cleaned) < 2 or width < 20:
             continue
@@ -80,12 +132,20 @@ def _parse_blocks(result: list) -> list[TextBlock]:
             TextBlock(
                 text=cleaned,
                 confidence=float(confidence),
-                height=float(height),
-                top=float(top),
+                height=height,
+                top=top,
             )
         )
 
     return blocks
+
+
+def _run_ocr(ocr: PaddleOCR, image_path: Path) -> list[TextBlock]:
+    if hasattr(ocr, "predict"):
+        return _parse_predict_result(ocr.predict(str(image_path)))
+
+    # PaddleOCR 2.x fallback
+    return _parse_legacy_result(ocr.ocr(str(image_path), cls=True))
 
 
 def _score_title_candidate(block: TextBlock, image_height: float) -> float:
@@ -97,7 +157,6 @@ def _score_title_candidate(block: TextBlock, image_height: float) -> float:
     if noise_ratio > 0.6:
         return 0.0
 
-    # Prefer larger text in the upper half of the cover
     size_score = block.height / max(image_height, 1) * 4.0
     position_score = max(0.0, 1.0 - (block.top / max(image_height * 0.6, 1)))
     confidence_score = block.confidence
@@ -125,8 +184,7 @@ def extract_titles(image_path: Path) -> list[str]:
         image_height = float(img.height)
 
     ocr = _get_ocr()
-    result = ocr.ocr(str(image_path), cls=True)
-    blocks = _parse_blocks(result)
+    blocks = _run_ocr(ocr, image_path)
 
     if not blocks:
         return []
@@ -139,7 +197,6 @@ def extract_titles(image_path: Path) -> list[str]:
 
     candidates = [text for text, score in scored if score > 0.8][:3]
 
-    # Also try combining top two blocks if they are close vertically
     if len(blocks) >= 2:
         top_blocks = sorted(blocks, key=lambda b: b.top)[:3]
         combined = " ".join(b.text for b in top_blocks[:2])

@@ -23,6 +23,32 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
 
+_NAV_TIMEOUT_MS = 120_000
+_ACTION_TIMEOUT_MS = 60_000
+_SESSION_COOKIE_NAMES = {"_session_id2", "loggedin", "session_id", "ccsid"}
+
+
+def _configure_page(page: Page) -> None:
+    page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
+    page.set_default_timeout(_ACTION_TIMEOUT_MS)
+
+
+async def _goto(page: Page, url: str) -> None:
+    """Navigate with retries — Render free tier + Goodreads can be very slow."""
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            await page.goto(url, wait_until="commit", timeout=_NAV_TIMEOUT_MS)
+            return
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Navigation attempt %s failed for %s: %s", attempt + 1, url, exc)
+            await asyncio.sleep(3 * (attempt + 1))
+    raise RuntimeError(
+        f"Could not load {url} (Goodreads may be slow from Render — retry in a minute). "
+        f"Last error: {last_error}"
+    ) from last_error
+
 
 @dataclass(frozen=True)
 class ShelfCheckResult:
@@ -60,6 +86,7 @@ class GoodreadsAutomation:
             "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
         )
         self._page = await self._context.new_page()
+        _configure_page(self._page)
 
         if storage_state:
             await self._verify_session()
@@ -78,15 +105,28 @@ class GoodreadsAutomation:
 
     async def _verify_session(self) -> None:
         assert self._page is not None
+        assert self._context is not None
         page = self._page
 
-        await page.goto("https://www.goodreads.com/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(2000)
+        cookies = await self._context.cookies("https://www.goodreads.com")
+        cookie_names = {cookie["name"] for cookie in cookies}
+        if not cookie_names & _SESSION_COOKIE_NAMES:
+            logger.warning("No Goodreads session cookies found in storage state")
 
-        if await self._is_logged_in(page):
-            self._logged_in = True
-            logger.info("Goodreads session restored from storage state")
-            return
+        # Lighter than homepage — confirms login for shelf operations
+        for url in (
+            "https://www.goodreads.com/review/list/1?shelf=to-read",
+            "https://www.goodreads.com/",
+        ):
+            try:
+                await _goto(page, url)
+                await page.wait_for_timeout(2000)
+                if await self._is_logged_in(page):
+                    self._logged_in = True
+                    logger.info("Goodreads session restored from storage state")
+                    return
+            except Exception as exc:
+                logger.warning("Session verify failed at %s: %s", url, exc)
 
         if settings.goodreads_email and settings.goodreads_password:
             logger.warning("Stored session expired — falling back to credential login")
@@ -94,7 +134,7 @@ class GoodreadsAutomation:
             return
 
         raise RuntimeError(
-            "Goodreads session expired. Re-export session with "
+            "Goodreads session expired or timed out. Re-export with "
             "python scripts/export_goodreads_session.py and update GOODREADS_STORAGE_STATE."
         )
 
@@ -108,10 +148,7 @@ class GoodreadsAutomation:
         assert self._page is not None
         page = self._page
 
-        await page.goto(
-            "https://www.goodreads.com/user/sign_in",
-            wait_until="domcontentloaded",
-        )
+        await _goto(page, "https://www.goodreads.com/user/sign_in")
         await page.wait_for_timeout(2000)
 
         if settings.goodreads_login_method == "goodreads":
@@ -134,12 +171,12 @@ class GoodreadsAutomation:
         await self._click_amazon_sign_in(page)
 
         if "amazon." not in page.url:
-            await page.goto(
+            await _goto(
+                page,
                 "https://www.amazon.com/ap/signin?openid.return_to="
                 + quote("https://www.goodreads.com/ap-handler/sign-in", safe="")
                 + "&openid.assoc_handle=amzn_goodreads_desktop_us"
                 + "&openid.mode=checkid_setup&siteState=xxx",
-                wait_until="domcontentloaded",
             )
 
         await self._amazon_sign_in(page)
@@ -329,7 +366,7 @@ class GoodreadsAutomation:
 
         try:
             search_url = f"https://www.goodreads.com/search?q={quote(title)}"
-            await page.goto(search_url, wait_until="domcontentloaded")
+            await _goto(page, search_url)
             await page.wait_for_timeout(1000)
 
             book_link = page.locator("tr[itemscope] a.bookTitle, .bookTitle span").first

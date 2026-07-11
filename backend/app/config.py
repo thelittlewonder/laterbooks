@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Literal
 
 from pydantic import computed_field
@@ -14,10 +13,8 @@ class Settings(BaseSettings):
     goodreads_password: str = ""
     goodreads_storage_state: str = ""
     goodreads_login_method: LoginMethod = "goodreads"
-    upload_dir: Path = Path("./uploads")
     max_photos: int = 10
     playwright_headless: bool = True
-    # Comma-separated string — pydantic-settings cannot parse list[str] from env directly
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     @computed_field  # type: ignore[prop-decorator]

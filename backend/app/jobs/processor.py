@@ -1,25 +1,34 @@
-"""Background photo processing pipeline."""
+"""Background Goodreads sync pipeline."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from pathlib import Path
 
 from app.goodreads.automation import GoodreadsAutomation
 from app.jobs.manager import job_manager
 from app.models.schemas import (
     BookResult,
     JobStatus,
+    PhotoSubmission,
     ProcessingStep,
     UnknownBook,
 )
-from app.ocr.detector import extract_titles
 
 logger = logging.getLogger(__name__)
 
 
-async def process_job(job_id: str, photo_paths: list[Path]) -> None:
+def _unique_titles(titles: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for title in titles:
+        key = title.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(title.strip())
+    return unique
+
+
+async def process_job(job_id: str, photos: list[PhotoSubmission]) -> None:
     goodreads = GoodreadsAutomation()
 
     try:
@@ -37,84 +46,65 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
         unknown_books: list[UnknownBook] = []
         results: list[BookResult] = []
 
-        for index, photo_path in enumerate(photo_paths):
-            photo_num = index + 1
+        for submission in photos:
+            photo_num = submission.photo_index + 1
+            titles = _unique_titles(submission.titles)
+
             job_manager.update(
                 job_id,
                 current_photo=photo_num,
-                current_step=ProcessingStep.OCR,
-                message=f"Reading photo {photo_num} of {len(photo_paths)}",
+                message=f"Processing photo {photo_num} of {len(photos)}",
             )
 
-            titles = await asyncio.to_thread(extract_titles, photo_path)
             if not titles:
                 unknown_books.append(
-                    UnknownBook(
-                        title="",
-                        photo_index=index,
-                        photo_filename=photo_path.name,
-                    )
+                    UnknownBook(title="", photo_index=submission.photo_index)
                 )
                 job_manager.update(
                     job_id,
                     unknown_books=unknown_books,
-                    message=f"No text detected in photo {photo_num}",
+                    message=f"No title for photo {photo_num}",
                 )
-            else:
-                books_found += len(titles)
-                job_manager.update(job_id, books_found=books_found)
+                continue
 
-                for title in titles:
-                    job_manager.update(
-                        job_id,
-                        current_step=ProcessingStep.CHECKING,
-                        current_title=title,
-                        message=f"Checking Goodreads for “{title}”",
+            books_found += len(titles)
+            job_manager.update(job_id, books_found=books_found)
+
+            for title in titles:
+                job_manager.update(
+                    job_id,
+                    current_step=ProcessingStep.CHECKING,
+                    current_title=title,
+                    message=f"Checking Goodreads for “{title}”",
+                )
+
+                result = await goodreads.check_and_add(title)
+
+                if result.status == "on_shelf":
+                    books_on_shelf += 1
+                elif result.status == "added":
+                    books_added += 1
+                elif result.status == "unknown":
+                    unknown_books.append(
+                        UnknownBook(title=title, photo_index=submission.photo_index)
                     )
 
-                    result = await goodreads.check_and_add(title)
-
-                    if result.status == "on_shelf":
-                        books_on_shelf += 1
-                    elif result.status == "added":
-                        books_added += 1
-                    elif result.status == "unknown":
-                        unknown_books.append(
-                            UnknownBook(
-                                title=title,
-                                photo_index=index,
-                                photo_filename=photo_path.name,
-                            )
-                        )
-
-                    results.append(
-                        BookResult(
-                            title=result.title,
-                            status=result.status,
-                            message=result.message,
-                            photo_index=index,
-                        )
+                results.append(
+                    BookResult(
+                        title=result.title,
+                        status=result.status,
+                        message=result.message,
+                        photo_index=submission.photo_index,
                     )
+                )
 
-                    job_manager.update(
-                        job_id,
-                        books_on_shelf=books_on_shelf,
-                        books_added=books_added,
-                        unknown_books=unknown_books,
-                        results=results,
-                    )
-
-            job_manager.update(
-                job_id,
-                current_step=ProcessingStep.CLEANUP,
-                message=f"Removing photo {photo_num}",
-            )
-            photo_path.unlink(missing_ok=True)
-
-        if photo_paths:
-            job_dir = photo_paths[0].parent
-            if job_dir.exists():
-                job_dir.rmdir()
+                job_manager.update(
+                    job_id,
+                    books_on_shelf=books_on_shelf,
+                    books_added=books_added,
+                    unknown_books=unknown_books,
+                    results=results,
+                )
 
         job_manager.update(
             job_id,
@@ -132,12 +122,6 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
             error=str(exc),
             message="Processing failed",
         )
-        for photo_path in photo_paths:
-            photo_path.unlink(missing_ok=True)
-        if photo_paths:
-            job_dir = photo_paths[0].parent
-            if job_dir.exists():
-                job_dir.rmdir()
     finally:
         await goodreads.close()
 

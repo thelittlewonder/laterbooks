@@ -225,11 +225,17 @@ def _pick_primary_title(boxes: list[TextBox]) -> str | None:
     return ranked[0][1]
 
 
+def _vision_auth_mode() -> str:
+    if settings.google_vision_credentials_json.strip():
+        return "service_account"
+    if settings.google_vision_api_key.strip():
+        return "api_key"
+    return "none"
+
+
 @lru_cache(maxsize=1)
 def _vision_enabled() -> bool:
-    return bool(settings.google_vision_api_key.strip()) or bool(
-        settings.google_vision_credentials_json.strip()
-    )
+    return _vision_auth_mode() != "none"
 
 
 def _access_token() -> str | None:
@@ -243,10 +249,22 @@ def _access_token() -> str | None:
     info = json.loads(raw)
     credentials = service_account.Credentials.from_service_account_info(
         info,
-        scopes=["https://www.googleapis.com/auth/cloud-vision"],
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
     credentials.refresh(Request())
     return credentials.token
+
+
+def _vision_error_message(status: int, body: str) -> str:
+    try:
+        detail = json.loads(body).get("error", {})
+        message = detail.get("message") or body
+        reason = (detail.get("details") or [{}])[0].get("reason", "")
+        if reason:
+            return f"Vision API failed ({status}): {message} [{reason}]"
+        return f"Vision API failed ({status}): {message}"
+    except (json.JSONDecodeError, IndexError, AttributeError):
+        return f"Vision API failed ({status}): {body[:300]}"
 
 
 def _call_vision(image_b64: str) -> dict:
@@ -261,18 +279,18 @@ def _call_vision(image_b64: str) -> dict:
         }
     ).encode("utf-8")
 
-    api_key = settings.google_vision_api_key.strip()
     token = _access_token()
+    api_key = settings.google_vision_api_key.strip()
 
-    if api_key:
-        url = f"{VISION_URL}?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-    elif token:
+    if token:
         url = VISION_URL
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         }
+    elif api_key:
+        url = f"{VISION_URL}?key={api_key}"
+        headers = {"Content-Type": "application/json"}
     else:
         raise RuntimeError(
             "Set GOOGLE_VISION_API_KEY or GOOGLE_VISION_CREDENTIALS_JSON on Render."
@@ -291,7 +309,55 @@ def _call_vision(image_b64: str) -> dict:
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         logger.error("Vision API error %s: %s", exc.code, body)
-        raise RuntimeError(f"Vision API failed ({exc.code})") from exc
+        raise RuntimeError(_vision_error_message(exc.code, body)) from exc
+
+
+def diagnose_vision() -> dict[str, str | bool]:
+    """Check Vision credentials without exposing secrets."""
+    mode = _vision_auth_mode()
+    result: dict[str, str | bool] = {"auth_mode": mode, "token_ok": False, "vision_ok": False}
+
+    if mode != "service_account":
+        result["error"] = "GOOGLE_VISION_CREDENTIALS_JSON is not set"
+        return result
+
+    raw = settings.google_vision_credentials_json.strip()
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        result["error"] = f"Invalid JSON in GOOGLE_VISION_CREDENTIALS_JSON: {exc}"
+        return result
+
+    result["project_id"] = info.get("project_id", "")
+    result["client_email"] = info.get("client_email", "")
+
+    try:
+        _access_token()
+        result["token_ok"] = True
+    except Exception as exc:
+        result["error"] = f"Token refresh failed: {exc}"
+        return result
+
+    # Tiny 1x1 white JPEG — enough to verify API access.
+    tiny_jpeg = (
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRof"
+        "Hh0gJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIy"
+        "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAB"
+        "AAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA"
+        "/9oADAMBAAIQAxAAAAGfAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAA"
+        "AAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8B"
+        "f//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEABj8Cf//Z"
+    )
+
+    try:
+        _call_vision(tiny_jpeg)
+        result["vision_ok"] = True
+    except RuntimeError as exc:
+        result["error"] = str(exc)
+    except Exception as exc:
+        result["error"] = f"Vision probe failed: {exc}"
+
+    return result
 
 
 def extract_titles(image_path: Path) -> list[str]:

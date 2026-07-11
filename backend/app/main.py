@@ -28,4 +28,13 @@ app.include_router(router)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    from app.ocr.detector import _vision_auth_mode
+
+    return {"status": "ok", "vision_auth": _vision_auth_mode()}
+
+
+@app.get("/health/vision")
+async def health_vision() -> dict[str, str | bool]:
+    from app.ocr.detector import diagnose_vision
+
+    return diagnose_vision()

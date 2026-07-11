@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     goodreads_email: str = ""
     goodreads_password: str = ""
+    goodreads_storage_state: str = ""
     upload_dir: Path = Path("./uploads")
     max_photos: int = 10
     playwright_headless: bool = True

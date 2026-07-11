@@ -89,7 +89,7 @@
 	<meta name="description" content="Sync book cover photos to your Goodreads Want to Read shelf" />
 </svelte:head>
 
-<main class="mx-auto min-h-dvh max-w-lg px-4 py-10">
+<main class="mx-auto min-h-dvh max-w-lg px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))]">
 	<header class="mb-8 text-center">
 		<h1 class="text-2xl font-semibold tracking-tight text-stone-900">laterbooks</h1>
 		<p class="mt-2 text-sm text-stone-600">

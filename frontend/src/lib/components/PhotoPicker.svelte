@@ -45,7 +45,7 @@
 			: ''}"
 	>
 		<span class="text-sm font-medium text-stone-700">Select up to {MAX_PHOTOS} cover photos</span>
-		<span class="mt-1 text-xs text-stone-500">From your iPhone gallery or camera roll</span>
+		<span class="mt-1 text-xs text-stone-500">Tap to pick photos from your gallery</span>
 		<input
 			type="file"
 			accept="image/*"
@@ -64,8 +64,9 @@
 					{#if !disabled}
 						<button
 							type="button"
-							class="absolute right-1 top-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white opacity-0 transition group-hover:opacity-100"
+							class="absolute right-1 top-1 min-h-7 min-w-7 rounded-full bg-black/60 text-sm text-white"
 							onclick={() => removeAt(index)}
+							aria-label="Remove photo {index + 1}"
 						>
 							×
 						</button>

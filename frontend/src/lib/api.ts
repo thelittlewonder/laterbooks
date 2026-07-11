@@ -15,12 +15,42 @@ function apiUrl(path: string): string {
 	return `${base}${path}`;
 }
 
+function networkErrorMessage(err: unknown): string {
+	const message = err instanceof Error ? err.message : 'Network error';
+
+	if (message === 'Load failed' || message === 'Failed to fetch') {
+		return (
+			'Could not reach the API. Common causes: ' +
+			'(1) Render service is waking up — open your Render URL/health in a tab, wait 60s, retry; ' +
+			'(2) CORS — on Render set CORS_ORIGINS to your Netlify URL; ' +
+			'(3) wrong VITE_API_URL on Netlify — redeploy after fixing.'
+		);
+	}
+
+	if (err instanceof DOMException && err.name === 'TimeoutError') {
+		return 'Request timed out. Render may still be waking up — wait a minute and try again.';
+	}
+
+	return message;
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+	try {
+		return await fetch(apiUrl(path), {
+			...init,
+			signal: init?.signal ?? AbortSignal.timeout(120_000)
+		});
+	} catch (err) {
+		throw new Error(networkErrorMessage(err));
+	}
+}
+
 async function parseError(response: Response): Promise<string> {
 	const text = await response.text();
 	const trimmed = text.trimStart();
 
 	if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
-		return 'API request hit Netlify instead of Render. Set VITE_API_URL to your Render backend URL (e.g. https://laterbooks-api.onrender.com) and redeploy.';
+		return 'API request hit Netlify instead of Render. Set VITE_API_URL to your Render backend URL and redeploy.';
 	}
 
 	try {
@@ -39,7 +69,7 @@ export async function createJob(photos: File[]): Promise<string> {
 		form.append('photos', photo);
 	}
 
-	const response = await fetch(apiUrl('/api/jobs'), {
+	const response = await apiFetch('/api/jobs', {
 		method: 'POST',
 		body: form
 	});
@@ -53,7 +83,7 @@ export async function createJob(photos: File[]): Promise<string> {
 }
 
 export async function getJob(jobId: string): Promise<JobProgress> {
-	const response = await fetch(apiUrl(`/api/jobs/${jobId}`));
+	const response = await apiFetch(`/api/jobs/${jobId}`);
 	if (!response.ok) {
 		throw new Error(await parseError(response));
 	}
@@ -61,7 +91,7 @@ export async function getJob(jobId: string): Promise<JobProgress> {
 }
 
 export async function submitManual(jobId: string, entries: ManualEntry[]): Promise<JobProgress> {
-	const response = await fetch(apiUrl(`/api/jobs/${jobId}/manual`), {
+	const response = await apiFetch(`/api/jobs/${jobId}/manual`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ entries })

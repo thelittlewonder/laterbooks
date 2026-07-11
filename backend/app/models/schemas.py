@@ -13,8 +13,10 @@ class JobStatus(str, Enum):
 
 class ProcessingStep(str, Enum):
     IDLE = "idle"
+    OCR = "ocr"
     CHECKING = "checking"
     ADDING = "adding"
+    CLEANUP = "cleanup"
 
 
 class BookResult(BaseModel):
@@ -27,15 +29,6 @@ class BookResult(BaseModel):
 class UnknownBook(BaseModel):
     title: str
     photo_index: int
-
-
-class PhotoSubmission(BaseModel):
-    photo_index: int
-    titles: list[str] = Field(default_factory=list)
-
-
-class JobCreateRequest(BaseModel):
-    photos: list[PhotoSubmission]
 
 
 class JobProgress(BaseModel):

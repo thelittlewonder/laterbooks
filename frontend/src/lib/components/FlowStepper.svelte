@@ -14,16 +14,15 @@
 
 	const steps: Step[] = [
 		{ id: 'select', label: 'Select' },
-		{ id: 'read', label: 'Read' },
+		{ id: 'upload', label: 'Upload' },
 		{ id: 'sync', label: 'Sync' },
 		{ id: 'done', label: 'Done' }
 	];
 
 	function activeIndex(current: AppPhase): number {
 		switch (current) {
-			case 'scanning':
+			case 'uploading':
 				return 1;
-			case 'syncing':
 			case 'processing':
 				return 2;
 			case 'complete':

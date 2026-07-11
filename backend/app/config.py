@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 from pydantic import computed_field
@@ -13,6 +14,9 @@ class Settings(BaseSettings):
     goodreads_password: str = ""
     goodreads_storage_state: str = ""
     goodreads_login_method: LoginMethod = "goodreads"
+    google_vision_api_key: str = ""
+    google_vision_credentials_json: str = ""
+    upload_dir: Path = Path("./uploads")
     max_photos: int = 10
     playwright_headless: bool = True
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"

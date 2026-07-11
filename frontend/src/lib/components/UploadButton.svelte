@@ -16,8 +16,8 @@
 	onclick={onupload}
 >
 	{#if loading}
-		Starting…
+		Uploading…
 	{:else}
-		Read & sync {count} photo{count === 1 ? '' : 's'}
+		Sync {count} photo{count === 1 ? '' : 's'} to Goodreads
 	{/if}
 </button>

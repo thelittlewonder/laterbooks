@@ -1,6 +1,6 @@
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
-export type ProcessingStep = 'idle' | 'checking' | 'adding';
+export type ProcessingStep = 'idle' | 'ocr' | 'checking' | 'adding' | 'cleanup';
 
 export type BookStatus = 'on_shelf' | 'added' | 'unknown' | 'failed';
 
@@ -32,15 +32,10 @@ export interface JobProgress {
 	message: string | null;
 }
 
-export interface PhotoSubmission {
-	photo_index: number;
-	titles: string[];
-}
-
 export interface ManualEntry {
 	original_title: string;
 	corrected_title: string;
 	photo_index: number;
 }
 
-export type AppPhase = 'idle' | 'scanning' | 'syncing' | 'processing' | 'complete' | 'error';
+export type AppPhase = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';

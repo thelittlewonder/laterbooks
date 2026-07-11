@@ -45,7 +45,7 @@
 			: ''}"
 	>
 		<span class="text-sm font-medium text-stone-700">Select up to {MAX_PHOTOS} cover photos</span>
-		<span class="mt-1 text-xs text-stone-500">One book per photo — make it the biggest thing in frame</span>
+		<span class="mt-1 text-xs text-stone-500">Snap bookstore shelf photos — we handle the rest</span>
 		<input
 			type="file"
 			accept="image/*"

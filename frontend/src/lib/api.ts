@@ -1,4 +1,4 @@
-import type { JobProgress, ManualEntry, PhotoSubmission } from './types';
+import type { JobProgress, ManualEntry } from './types';
 
 function apiUrl(path: string): string {
 	const base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -38,7 +38,7 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 	try {
 		return await fetch(apiUrl(path), {
 			...init,
-			signal: init?.signal ?? AbortSignal.timeout(120_000)
+			signal: init?.signal ?? AbortSignal.timeout(180_000)
 		});
 	} catch (err) {
 		throw new Error(networkErrorMessage(err));
@@ -63,11 +63,15 @@ async function parseError(response: Response): Promise<string> {
 	return text || `Request failed (${response.status})`;
 }
 
-export async function createJob(photos: PhotoSubmission[]): Promise<string> {
+export async function createJob(photos: File[]): Promise<string> {
+	const form = new FormData();
+	for (const photo of photos) {
+		form.append('photos', photo);
+	}
+
 	const response = await apiFetch('/api/jobs', {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ photos })
+		body: form
 	});
 
 	if (!response.ok) {

@@ -9,9 +9,11 @@
 	let { progress }: Props = $props();
 
 	const stepLabel: Record<string, string> = {
-		idle: 'Starting session',
+		idle: 'Starting',
+		ocr: 'Reading cover',
 		checking: 'Checking shelf',
-		adding: 'Adding book'
+		adding: 'Adding book',
+		cleanup: 'Cleaning up'
 	};
 
 	const statusLabels: Record<string, string> = {

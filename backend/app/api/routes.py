@@ -2,38 +2,45 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
 from app.config import settings
 from app.jobs.manager import job_manager
 from app.jobs.processor import process_job, process_manual_entries
-from app.models.schemas import (
-    JobCreateRequest,
-    JobCreateResponse,
-    JobProgress,
-    ManualSubmitRequest,
-    PhotoSubmission,
-)
+from app.models.schemas import JobCreateResponse, JobProgress, ManualSubmitRequest
 
 router = APIRouter(prefix="/api")
 
 
 @router.post("/jobs", response_model=JobCreateResponse)
 async def create_job(
-    body: JobCreateRequest,
     background_tasks: BackgroundTasks,
+    photos: list[UploadFile] = File(...),
 ) -> JobCreateResponse:
-    if not body.photos:
+    if not photos:
         raise HTTPException(status_code=400, detail="At least one photo is required")
-    if len(body.photos) > settings.max_photos:
+    if len(photos) > settings.max_photos:
         raise HTTPException(
             status_code=400,
             detail=f"Maximum {settings.max_photos} photos allowed",
         )
 
-    photos = sorted(body.photos, key=lambda photo: photo.photo_index)
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
     progress = job_manager.create(total_photos=len(photos))
-    background_tasks.add_task(process_job, progress.job_id, photos)
+    job_dir = settings.upload_dir / progress.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    photo_paths: list[Path] = []
+    for index, photo in enumerate(photos):
+        suffix = Path(photo.filename or f"photo_{index}.jpg").suffix or ".jpg"
+        dest = job_dir / f"{index:02d}{suffix}"
+        content = await photo.read()
+        dest.write_bytes(content)
+        photo_paths.append(dest)
+
+    background_tasks.add_task(process_job, progress.job_id, photo_paths)
     return JobCreateResponse(job_id=progress.job_id)
 
 

@@ -1,12 +1,14 @@
 <script lang="ts">
 	import PhotoPicker from '$lib/components/PhotoPicker.svelte';
 	import UploadButton from '$lib/components/UploadButton.svelte';
+	import FlowStepper from '$lib/components/FlowStepper.svelte';
 	import OcrProgress from '$lib/components/OcrProgress.svelte';
+	import SyncProgress from '$lib/components/SyncProgress.svelte';
 	import LiveProgress from '$lib/components/LiveProgress.svelte';
 	import FinalSummary from '$lib/components/FinalSummary.svelte';
 	import ManualReview from '$lib/components/ManualReview.svelte';
 	import { createJob, pollJob, submitManual } from '$lib/api';
-	import { scanPhotos, type ScanProgress } from '$lib/ocr/extract';
+	import { scanPhotos, type PhotoOcrResult, type ScanProgress } from '$lib/ocr/extract';
 	import type { AppPhase, JobProgress, ManualEntry } from '$lib/types';
 
 	let files = $state<File[]>([]);
@@ -14,6 +16,7 @@
 	let jobId = $state<string | null>(null);
 	let progress = $state<JobProgress | null>(null);
 	let scanProgress = $state<ScanProgress | null>(null);
+	let ocrCompleted = $state<PhotoOcrResult[]>([]);
 	let error = $state<string | null>(null);
 	let manualSubmitting = $state(false);
 	let stopPolling: (() => void) | null = null;
@@ -22,6 +25,8 @@
 		phase === 'scanning' || phase === 'syncing' || phase === 'processing' || manualSubmitting
 	);
 
+	const showStepper = $derived(phase !== 'idle');
+
 	function reset() {
 		stopPolling?.();
 		stopPolling = null;
@@ -29,6 +34,7 @@
 		jobId = null;
 		progress = null;
 		scanProgress = null;
+		ocrCompleted = [];
 		error = null;
 		phase = 'idle';
 		manualSubmitting = false;
@@ -38,14 +44,22 @@
 		if (files.length === 0) return;
 
 		error = null;
+		ocrCompleted = [];
 		phase = 'scanning';
-		scanProgress = null;
+		scanProgress = {
+			photo_index: 0,
+			total: files.length,
+			percent: 0,
+			message: 'Preparing…'
+		};
 
 		try {
 			const ocrResults = await scanPhotos(files, (update) => {
 				scanProgress = update;
+				ocrCompleted = update.completed ?? [];
 			});
 
+			ocrCompleted = ocrResults;
 			phase = 'syncing';
 			scanProgress = null;
 
@@ -58,6 +72,21 @@
 
 			jobId = id;
 			phase = 'processing';
+			progress = {
+				job_id: id,
+				status: 'pending',
+				current_photo: 0,
+				total_photos: files.length,
+				current_step: 'idle',
+				current_title: null,
+				books_found: 0,
+				books_on_shelf: 0,
+				books_added: 0,
+				unknown_books: [],
+				results: [],
+				error: null,
+				message: 'Starting Goodreads session…'
+			};
 
 			stopPolling = pollJob(id, (update) => {
 				progress = update;
@@ -116,6 +145,10 @@
 	</header>
 
 	<div class="space-y-6">
+		{#if showStepper}
+			<FlowStepper {phase} />
+		{/if}
+
 		{#if phase === 'idle' || phase === 'scanning' || phase === 'syncing'}
 			<PhotoPicker {files} disabled={isBusy} onchange={(selected) => (files = selected)} />
 			<UploadButton
@@ -127,16 +160,14 @@
 		{/if}
 
 		{#if phase === 'scanning' && scanProgress}
-			<OcrProgress progress={scanProgress} />
+			<OcrProgress progress={scanProgress} completed={ocrCompleted} />
 		{/if}
 
 		{#if phase === 'syncing'}
-			<div class="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">
-				Sending titles to Goodreads…
-			</div>
+			<SyncProgress />
 		{/if}
 
-		{#if phase === 'processing' && progress}
+		{#if (phase === 'processing' || manualSubmitting) && progress}
 			<LiveProgress {progress} />
 		{/if}
 

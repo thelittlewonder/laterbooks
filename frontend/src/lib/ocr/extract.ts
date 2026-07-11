@@ -47,6 +47,10 @@ export interface ScanProgress {
 	message: string;
 }
 
+export interface ScanUpdate extends ScanProgress {
+	completed?: PhotoOcrResult[];
+}
+
 let workerPromise: Promise<Worker> | null = null;
 let currentProgress: ((percent: number) => void) | undefined;
 
@@ -163,17 +167,26 @@ export async function extractTitlesFromFile(
 
 export async function scanPhotos(
 	files: File[],
-	onProgress: (progress: ScanProgress) => void
+	onProgress: (progress: ScanUpdate) => void
 ): Promise<PhotoOcrResult[]> {
 	const results: PhotoOcrResult[] = [];
 
 	try {
+		onProgress({
+			photo_index: 0,
+			total: files.length,
+			percent: 0,
+			message: 'Loading OCR engine…',
+			completed: []
+		});
+
 		for (let index = 0; index < files.length; index++) {
 			onProgress({
 				photo_index: index,
 				total: files.length,
 				percent: 0,
-				message: `Reading cover ${index + 1} of ${files.length}`
+				message: `Reading cover ${index + 1} of ${files.length}`,
+				completed: results
 			});
 
 			const result = await extractTitlesFromFile(files[index], index, (percent) => {
@@ -181,11 +194,19 @@ export async function scanPhotos(
 					photo_index: index,
 					total: files.length,
 					percent: Math.round(percent * 100),
-					message: `Reading cover ${index + 1} of ${files.length}`
+					message: `Reading cover ${index + 1} of ${files.length}`,
+					completed: results
 				});
 			});
 
 			results.push(result);
+			onProgress({
+				photo_index: index,
+				total: files.length,
+				percent: 100,
+				message: `Finished cover ${index + 1} of ${files.length}`,
+				completed: results
+			});
 		}
 	} finally {
 		await terminateOcr();

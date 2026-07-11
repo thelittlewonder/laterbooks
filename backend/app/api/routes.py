@@ -65,5 +65,9 @@ async def submit_manual(
         raise HTTPException(status_code=400, detail="No entries provided")
 
     entries = [(entry.corrected_title, entry.photo_index) for entry in body.entries]
+    job_manager.update(job_id, status=JobStatus.PROCESSING, message="Processing manual entries")
     background_tasks.add_task(process_manual_entries, job_id, entries)
-    return job
+    updated = job_manager.get(job_id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return updated

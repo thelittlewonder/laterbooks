@@ -60,6 +60,7 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
                 job_manager.update(
                     job_id,
                     unknown_books=unknown_books,
+                    photos_completed=photo_num,
                     message=f"No title detected in photo {photo_num}",
                 )
                 continue
@@ -70,9 +71,9 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
 
             job_manager.update(
                 job_id,
-                current_step=ProcessingStep.CHECKING,
+                current_step=ProcessingStep.ADDING,
                 current_title=title,
-                message=f"Checking Goodreads for “{title}”",
+                message=f"Syncing “{title}” to Goodreads",
             )
 
             result = await goodreads.check_and_add(title)
@@ -99,6 +100,7 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
                 books_added=books_added,
                 unknown_books=unknown_books,
                 results=results,
+                photos_completed=photo_num,
             )
 
         if photo_paths:
@@ -111,6 +113,7 @@ async def process_job(job_id: str, photo_paths: list[Path]) -> None:
             status=JobStatus.COMPLETED,
             current_step=ProcessingStep.IDLE,
             current_title=None,
+            photos_completed=len(photo_paths),
             message="Done",
         )
 
@@ -143,6 +146,11 @@ async def process_manual_entries(
         return
 
     try:
+        job_manager.update(
+            job_id,
+            status=JobStatus.PROCESSING,
+            message="Processing manual entries",
+        )
         await goodreads.start()
         books_added = job.books_added
         books_on_shelf = job.books_on_shelf

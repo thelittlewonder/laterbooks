@@ -49,6 +49,7 @@
 				status: 'pending',
 				current_photo: 0,
 				total_photos: files.length,
+				photos_completed: 0,
 				current_step: 'idle',
 				current_title: null,
 				books_found: 0,

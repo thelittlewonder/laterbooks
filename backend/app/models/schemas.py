@@ -36,6 +36,7 @@ class JobProgress(BaseModel):
     status: JobStatus
     current_photo: int = 0
     total_photos: int = 0
+    photos_completed: int = 0
     current_step: ProcessingStep = ProcessingStep.IDLE
     current_title: str | None = None
     books_found: int = 0

@@ -21,6 +21,7 @@ export interface JobProgress {
 	status: JobStatus;
 	current_photo: number;
 	total_photos: number;
+	photos_completed: number;
 	current_step: ProcessingStep;
 	current_title: string | null;
 	books_found: number;

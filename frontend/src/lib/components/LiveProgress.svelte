@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ProgressBar from '$lib/components/ProgressBar.svelte';
-	import type { JobProgress } from '$lib/types';
+	import type { JobProgress, ProcessingStep } from '$lib/types';
 
 	interface Props {
 		progress: JobProgress | null;
@@ -8,12 +8,20 @@
 
 	let { progress }: Props = $props();
 
-	const stepLabel: Record<string, string> = {
+	const stepLabel: Record<ProcessingStep, string> = {
 		idle: 'Starting',
 		ocr: 'Reading cover',
 		checking: 'Checking shelf',
-		adding: 'Adding book',
+		adding: 'Syncing to Goodreads',
 		cleanup: 'Cleaning up'
+	};
+
+	const stepWeight: Record<ProcessingStep, number> = {
+		idle: 0,
+		ocr: 0.2,
+		cleanup: 0.35,
+		checking: 0.55,
+		adding: 0.75
 	};
 
 	const statusLabels: Record<string, string> = {
@@ -30,15 +38,22 @@
 		failed: 'text-red-700'
 	};
 
-	let percent = $derived(
-		progress && progress.total_photos > 0
-			? Math.round((progress.current_photo / progress.total_photos) * 100)
-			: progress?.status === 'pending'
-				? 5
-				: 0
-	);
+	let percent = $derived.by(() => {
+		if (!progress || progress.total_photos <= 0) {
+			return progress?.status === 'pending' ? 5 : 0;
+		}
+
+		const completed = progress.photos_completed ?? 0;
+		const inPhoto = progress.status === 'processing' ? (stepWeight[progress.current_step] ?? 0) : 0;
+		const raw = ((completed + inPhoto) / progress.total_photos) * 100;
+		return Math.min(100, Math.round(raw));
+	});
 
 	let recentResults = $derived(progress?.results.slice(-4).reverse() ?? []);
+
+	let titlePrefix = $derived(
+		progress?.current_step === 'adding' ? 'Now syncing:' : 'Now checking:'
+	);
 </script>
 
 {#if progress}
@@ -51,15 +66,21 @@
 		</div>
 
 		<div class="mb-3 flex items-center justify-between text-xs text-stone-500">
-			<span>Photo {progress.current_photo} of {progress.total_photos}</span>
-			<span>Step 3 of 4</span>
+			<span>
+				{#if progress.status === 'processing' && progress.current_photo > 0}
+					Working on photo {progress.current_photo} of {progress.total_photos}
+				{:else}
+					{progress.photos_completed ?? 0} of {progress.total_photos} photos done
+				{/if}
+			</span>
+			<span>{progress.photos_completed ?? 0} of {progress.total_photos} complete</span>
 		</div>
 
 		<ProgressBar value={percent} />
 
 		{#if progress.current_title}
 			<p class="mt-4 truncate text-sm text-stone-800">
-				<span class="text-stone-500">Now checking:</span> “{progress.current_title}”
+				<span class="text-stone-500">{titlePrefix}</span> “{progress.current_title}”
 			</p>
 		{:else if progress.message}
 			<p class="mt-4 text-sm text-stone-600">{progress.message}</p>

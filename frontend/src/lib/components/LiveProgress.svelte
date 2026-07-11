@@ -65,7 +65,7 @@
 
 		<dl class="mt-4 grid grid-cols-3 gap-3 text-center text-xs">
 			<div class="rounded-lg bg-stone-50 px-2 py-2">
-				<dt class="text-stone-500">Found</dt>
+				<dt class="text-stone-500">Detected</dt>
 				<dd class="text-lg font-semibold text-stone-900">{progress.books_found}</dd>
 			</div>
 			<div class="rounded-lg bg-stone-50 px-2 py-2">

@@ -140,7 +140,7 @@
 	<header class="mb-8 text-center">
 		<h1 class="text-2xl font-semibold tracking-tight text-stone-900">laterbooks</h1>
 		<p class="mt-2 text-sm text-stone-600">
-			Select book cover photos. Titles are read on your phone, then synced to Goodreads.
+			One book per photo. Titles can be anywhere on the cover — we read the largest text.
 		</p>
 	</header>
 

@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Any, Literal
 from urllib.parse import quote
 
@@ -26,6 +27,28 @@ _USER_AGENT = (
 _NAV_TIMEOUT_MS = 120_000
 _ACTION_TIMEOUT_MS = 60_000
 _SESSION_COOKIE_NAMES = {"_session_id2", "loggedin", "session_id", "ccsid"}
+_MIN_QUERY_LEN = 4
+_MIN_MATCH_SCORE = 0.32
+
+
+def _normalize_title(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _title_match_score(query: str, candidate: str) -> float:
+    query_norm = _normalize_title(query)
+    candidate_norm = _normalize_title(candidate)
+    if not query_norm or not candidate_norm:
+        return 0.0
+
+    sequence_score = SequenceMatcher(None, query_norm, candidate_norm).ratio()
+    query_tokens = set(query_norm.split())
+    candidate_tokens = set(candidate_norm.split())
+    if not query_tokens or not candidate_tokens:
+        return sequence_score
+
+    overlap = len(query_tokens & candidate_tokens) / max(len(query_tokens), 1)
+    return max(sequence_score, overlap)
 
 
 def _configure_page(page: Page) -> None:
@@ -365,17 +388,36 @@ class GoodreadsAutomation:
         assert page is not None
 
         try:
-            search_url = f"https://www.goodreads.com/search?q={quote(title)}"
+            query = title.strip()
+            if len(query) < _MIN_QUERY_LEN:
+                return ShelfCheckResult(
+                    title=query,
+                    status="unknown",
+                    message="Detected title too short to search safely",
+                )
+
+            search_url = f"https://www.goodreads.com/search?q={quote(query)}"
             await _goto(page, search_url)
             await page.wait_for_timeout(1000)
 
             book_link = page.locator("tr[itemscope] a.bookTitle, .bookTitle span").first
             if await book_link.count() == 0:
                 return ShelfCheckResult(
-                    title=title, status="unknown", message="No search results"
+                    title=query, status="unknown", message="No search results"
                 )
 
             book_title = (await book_link.inner_text()).strip()
+            match_score = _title_match_score(query, book_title)
+            if match_score < _MIN_MATCH_SCORE:
+                return ShelfCheckResult(
+                    title=query,
+                    status="unknown",
+                    message=(
+                        f"Top result “{book_title}” doesn’t match detected title "
+                        f"(score {match_score:.2f})"
+                    ),
+                )
+
             await book_link.click()
             await page.wait_for_load_state("domcontentloaded")
             await page.wait_for_timeout(800)

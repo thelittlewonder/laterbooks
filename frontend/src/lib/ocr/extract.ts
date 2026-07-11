@@ -32,8 +32,21 @@ const NOISE_WORDS = new Set([
 	'harper',
 	'collins',
 	'simon',
-	'schuster'
+	'schuster',
+	'modern',
+	'classics',
+	'classic',
+	'penguin'
 ]);
+
+/**
+ * Crop the photo (not the cover layout) to the main book in frame.
+ * Titles can sit anywhere on a cover — we only use size to pick text.
+ */
+const CROP_WIDTH_RATIO = 0.72;
+const CROP_HEIGHT_RATIO = 0.78;
+const MAX_OCR_DIMENSION = 1600;
+const MIN_HEIGHT_RATIO = 0.4;
 
 export interface PhotoOcrResult {
 	photo_index: number;
@@ -77,39 +90,173 @@ export async function terminateOcr(): Promise<void> {
 
 function cleanLine(text: string): string {
 	return text
-		.replace(/[|•·]/g, ' ')
+		.replace(/[|•·*_]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
 }
 
+function letterCount(text: string): number {
+	return (text.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+}
+
+function isGarbageTitle(text: string): boolean {
+	if (letterCount(text) < 5) return true;
+
+	const nonSpace = text.replace(/\s/g, '');
+	const letters = letterCount(nonSpace);
+	if (letters / nonSpace.length < 0.55) return true;
+
+	const words = text.split(/\s+/).filter(Boolean);
+	if (words.length === 1 && words[0].length <= 3) return true;
+	if (words.every((word) => word.length <= 2)) return true;
+
+	const weird = (text.match(/[^a-zA-ZÀ-ÿ0-9\s'-]/g) || []).length;
+	if (weird / nonSpace.length > 0.25) return true;
+
+	return false;
+}
+
 function isLikelyTitle(text: string): boolean {
-	if (text.length < 2 || text.length > 80) return false;
-	if (!/[a-zA-Z]/.test(text)) return false;
+	if (text.length < 3 || text.length > 120) return false;
+	if (!/[a-zA-ZÀ-ÿ]/.test(text)) return false;
 	if (/^\d+$/.test(text)) return false;
 	if (/^isbn/i.test(text)) return false;
+	if (isGarbageTitle(text)) return false;
 
 	const words = text.toLowerCase().split(/\s+/);
 	const noiseCount = words.filter((word) => NOISE_WORDS.has(word)).length;
-	if (noiseCount / words.length > 0.6) return false;
+	if (words.length > 0 && noiseCount / words.length > 0.6) return false;
 
 	return true;
 }
 
-function scoreLine(line: Line, imageHeight: number): number {
-	const height = line.bbox.y1 - line.bbox.y0;
-	const top = line.bbox.y0;
+interface TextLine {
+	text: string;
+	y0: number;
+	y1: number;
+	height: number;
+	width: number;
+	area: number;
+}
+
+function toTextLine(line: Line): TextLine {
 	const width = line.bbox.x1 - line.bbox.x0;
-	const text = cleanLine(line.text);
+	const height = line.bbox.y1 - line.bbox.y0;
+
+	return {
+		text: cleanLine(line.text),
+		y0: line.bbox.y0,
+		y1: line.bbox.y1,
+		height,
+		width,
+		area: width * height
+	};
+}
+
+function groupLines(lines: TextLine[], gap = 28): TextLine[][] {
+	const sorted = [...lines].sort((a, b) => a.y0 - b.y0 || a.text.localeCompare(b.text));
+	const groups: TextLine[][] = [];
+
+	for (const line of sorted) {
+		const last = groups.at(-1);
+		if (!last || line.y0 - last.at(-1)!.y1 > gap) {
+			groups.push([line]);
+		} else {
+			last.push(line);
+		}
+	}
+
+	return groups;
+}
+
+function mergeGroup(group: TextLine[]): string {
+	return group
+		.map((line) => line.text)
+		.filter(Boolean)
+		.join(' ');
+}
+
+/** Drop tiny text (spines, imprints) — keep the largest type on the cover. */
+function prominentLines(lines: TextLine[]): TextLine[] {
+	if (lines.length === 0) return lines;
+
+	const maxHeight = Math.max(...lines.map((line) => line.height));
+	return lines.filter((line) => line.height / maxHeight >= MIN_HEIGHT_RATIO);
+}
+
+function scoreTitleGroup(group: TextLine[], text: string): number {
+	const totalArea = group.reduce((sum, line) => sum + line.area, 0);
+	const avgHeight = group.reduce((sum, line) => sum + line.height, 0) / group.length;
+	const maxLineHeight = Math.max(...group.map((line) => line.height));
 	const wordCount = text.split(/\s+/).length;
 
-	let score = height * 2 + (1 - top / Math.max(imageHeight, 1)) * 50;
-	score += Math.min(width / 20, 30);
+	let score = totalArea * 3 + avgHeight * 14 + maxLineHeight * 6;
+	score += Math.min(text.length, 60);
 
-	if (wordCount >= 1 && wordCount <= 6) score += 20;
-	if (wordCount > 8) score -= 30;
-	if (text === text.toUpperCase() && wordCount <= 5) score += 10;
+	if (wordCount >= 2 && wordCount <= 12) score += 25;
+	if (text === text.toUpperCase()) score += 8;
 
 	return score;
+}
+
+function pickTitles(lines: Line[]): string[] {
+	if (lines.length === 0) return [];
+
+	const textLines = lines.map(toTextLine).filter((line) => line.text.length > 0);
+	if (textLines.length === 0) return [];
+
+	const candidates = prominentLines(textLines);
+	const scoped = candidates.length > 0 ? candidates : textLines;
+
+	const groups = groupLines(scoped);
+	const ranked = groups
+		.map((group) => {
+			const text = mergeGroup(group);
+			return { text, score: scoreTitleGroup(group, text) };
+		})
+		.filter((entry) => isLikelyTitle(entry.text))
+		.sort((a, b) => b.score - a.score);
+
+	if (ranked.length === 0) return [];
+
+	return [ranked[0].text];
+}
+
+async function focusCropImage(file: File): Promise<HTMLCanvasElement> {
+	const bitmap = await createImageBitmap(file);
+	const sourceWidth = bitmap.width;
+	const sourceHeight = bitmap.height;
+
+	const cropWidth = sourceWidth * CROP_WIDTH_RATIO;
+	const cropHeight = sourceHeight * CROP_HEIGHT_RATIO;
+	const sourceX = (sourceWidth - cropWidth) / 2;
+	const sourceY = (sourceHeight - cropHeight) / 2;
+
+	const scale = Math.min(1, MAX_OCR_DIMENSION / Math.max(cropWidth, cropHeight));
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.round(cropWidth * scale);
+	canvas.height = Math.round(cropHeight * scale);
+
+	const ctx = canvas.getContext('2d');
+	if (!ctx) {
+		bitmap.close();
+		throw new Error('Could not prepare image for OCR');
+	}
+
+	ctx.drawImage(
+		bitmap,
+		sourceX,
+		sourceY,
+		cropWidth,
+		cropHeight,
+		0,
+		0,
+		canvas.width,
+		canvas.height
+	);
+	bitmap.close();
+
+	return canvas;
 }
 
 function collectLines(page: Page): Line[] {
@@ -122,32 +269,6 @@ function collectLines(page: Page): Line[] {
 	return lines;
 }
 
-function pickTitles(lines: Line[]): string[] {
-	if (lines.length === 0) return [];
-
-	const imageHeight = Math.max(...lines.map((line) => line.bbox.y1), 1);
-	const ranked = lines
-		.map((line) => ({
-			text: cleanLine(line.text),
-			score: scoreLine(line, imageHeight)
-		}))
-		.filter((entry) => isLikelyTitle(entry.text))
-		.sort((a, b) => b.score - a.score);
-
-	const titles: string[] = [];
-	const seen = new Set<string>();
-
-	for (const entry of ranked) {
-		const key = entry.text.toLowerCase();
-		if (seen.has(key)) continue;
-		seen.add(key);
-		titles.push(entry.text);
-		if (titles.length >= 3) break;
-	}
-
-	return titles;
-}
-
 export async function extractTitlesFromFile(
 	file: File,
 	photoIndex: number,
@@ -156,7 +277,8 @@ export async function extractTitlesFromFile(
 	currentProgress = onProgress;
 	try {
 		const worker = await getWorker();
-		const { data } = await worker.recognize(file, {}, { blocks: true });
+		const focused = await focusCropImage(file);
+		const { data } = await worker.recognize(focused, {}, { blocks: true });
 		const lines = collectLines(data);
 		const titles = pickTitles(lines);
 		return { photo_index: photoIndex, titles };

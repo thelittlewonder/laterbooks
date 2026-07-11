@@ -67,7 +67,7 @@ async def process_job(job_id: str, photos: list[PhotoSubmission]) -> None:
                 )
                 continue
 
-            books_found += len(titles)
+            books_found += 1 if titles else 0
             job_manager.update(job_id, books_found=books_found)
 
             for title in titles:

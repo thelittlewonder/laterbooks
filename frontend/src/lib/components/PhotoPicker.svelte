@@ -45,7 +45,7 @@
 			: ''}"
 	>
 		<span class="text-sm font-medium text-stone-700">Select up to {MAX_PHOTOS} cover photos</span>
-		<span class="mt-1 text-xs text-stone-500">Tap to pick photos from your gallery</span>
+		<span class="mt-1 text-xs text-stone-500">One book per photo — make it the biggest thing in frame</span>
 		<input
 			type="file"
 			accept="image/*"

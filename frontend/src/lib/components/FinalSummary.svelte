@@ -32,7 +32,7 @@
 
 		<dl class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<div class="rounded-xl bg-stone-50 p-3 text-center">
-				<dt class="text-xs text-stone-500">Titles found</dt>
+				<dt class="text-xs text-stone-500">Detected</dt>
 				<dd class="text-2xl font-semibold">{progress.books_found}</dd>
 			</div>
 			<div class="rounded-xl bg-stone-50 p-3 text-center">

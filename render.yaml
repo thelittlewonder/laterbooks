@@ -12,9 +12,11 @@ services:
         sync: false
       - key: GOODREADS_PASSWORD
         sync: false
+      - key: GOODREADS_STORAGE_STATE
+        sync: false
+      - key: GOODREADS_LOGIN_METHOD
+        value: "goodreads"
       - key: CORS_ORIGINS
         sync: false
       - key: PLAYWRIGHT_HEADLESS
         value: "true"
-      - key: UPLOAD_DIR
-        value: /tmp/uploads

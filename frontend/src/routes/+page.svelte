@@ -1,22 +1,25 @@
 <script lang="ts">
 	import PhotoPicker from '$lib/components/PhotoPicker.svelte';
 	import UploadButton from '$lib/components/UploadButton.svelte';
+	import OcrProgress from '$lib/components/OcrProgress.svelte';
 	import LiveProgress from '$lib/components/LiveProgress.svelte';
 	import FinalSummary from '$lib/components/FinalSummary.svelte';
 	import ManualReview from '$lib/components/ManualReview.svelte';
 	import { createJob, pollJob, submitManual } from '$lib/api';
+	import { scanPhotos, type ScanProgress } from '$lib/ocr/extract';
 	import type { AppPhase, JobProgress, ManualEntry } from '$lib/types';
 
 	let files = $state<File[]>([]);
 	let phase = $state<AppPhase>('idle');
 	let jobId = $state<string | null>(null);
 	let progress = $state<JobProgress | null>(null);
+	let scanProgress = $state<ScanProgress | null>(null);
 	let error = $state<string | null>(null);
 	let manualSubmitting = $state(false);
 	let stopPolling: (() => void) | null = null;
 
 	const isBusy = $derived(
-		phase === 'uploading' || phase === 'processing' || manualSubmitting
+		phase === 'scanning' || phase === 'syncing' || phase === 'processing' || manualSubmitting
 	);
 
 	function reset() {
@@ -25,19 +28,34 @@
 		files = [];
 		jobId = null;
 		progress = null;
+		scanProgress = null;
 		error = null;
 		phase = 'idle';
 		manualSubmitting = false;
 	}
 
-	async function handleUpload() {
+	async function handleSync() {
 		if (files.length === 0) return;
 
 		error = null;
-		phase = 'uploading';
+		phase = 'scanning';
+		scanProgress = null;
 
 		try {
-			const id = await createJob(files);
+			const ocrResults = await scanPhotos(files, (update) => {
+				scanProgress = update;
+			});
+
+			phase = 'syncing';
+			scanProgress = null;
+
+			const id = await createJob(
+				ocrResults.map((result) => ({
+					photo_index: result.photo_index,
+					titles: result.titles
+				}))
+			);
+
 			jobId = id;
 			phase = 'processing';
 
@@ -52,7 +70,7 @@
 			});
 		} catch (err) {
 			phase = 'error';
-			error = err instanceof Error ? err.message : 'Upload failed';
+			error = err instanceof Error ? err.message : 'Sync failed';
 		}
 	}
 
@@ -93,19 +111,29 @@
 	<header class="mb-8 text-center">
 		<h1 class="text-2xl font-semibold tracking-tight text-stone-900">laterbooks</h1>
 		<p class="mt-2 text-sm text-stone-600">
-			Upload book cover photos. Missing titles are added to your Goodreads Want to Read shelf.
+			Select book cover photos. Titles are read on your phone, then synced to Goodreads.
 		</p>
 	</header>
 
 	<div class="space-y-6">
-		{#if phase === 'idle' || phase === 'uploading'}
+		{#if phase === 'idle' || phase === 'scanning' || phase === 'syncing'}
 			<PhotoPicker {files} disabled={isBusy} onchange={(selected) => (files = selected)} />
 			<UploadButton
 				count={files.length}
 				disabled={isBusy}
-				loading={phase === 'uploading'}
-				onupload={handleUpload}
+				loading={phase === 'syncing'}
+				onupload={handleSync}
 			/>
+		{/if}
+
+		{#if phase === 'scanning' && scanProgress}
+			<OcrProgress progress={scanProgress} />
+		{/if}
+
+		{#if phase === 'syncing'}
+			<div class="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-600 shadow-sm">
+				Sending titles to Goodreads…
+			</div>
 		{/if}
 
 		{#if phase === 'processing' && progress}

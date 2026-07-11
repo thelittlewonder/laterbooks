@@ -12,7 +12,7 @@ export default defineConfig({
 			manifest: {
 				name: 'laterbooks',
 				short_name: 'laterbooks',
-				description: 'Sync book cover photos to your Goodreads Want to Read shelf',
+				description: 'Read book covers on your phone and sync to Goodreads Want to Read',
 				theme_color: '#1c1917',
 				background_color: '#f5f5f4',
 				display: 'standalone',

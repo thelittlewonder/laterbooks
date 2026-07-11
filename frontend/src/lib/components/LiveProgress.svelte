@@ -9,10 +9,8 @@
 
 	const stepLabel: Record<string, string> = {
 		idle: 'Starting',
-		ocr: 'Reading cover',
 		checking: 'Checking shelf',
-		adding: 'Adding book',
-		cleanup: 'Cleaning up'
+		adding: 'Adding book'
 	};
 
 	let percent = $derived(
@@ -26,7 +24,7 @@
 	<div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
 		<div class="mb-3 flex items-center justify-between text-sm">
 			<span class="font-medium text-stone-800">
-				{stepLabel[progress.current_step] ?? 'Processing'}
+				{stepLabel[progress.current_step] ?? 'Syncing Goodreads'}
 			</span>
 			<span class="text-stone-500">
 				Photo {progress.current_photo} / {progress.total_photos}

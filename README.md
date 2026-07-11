@@ -1,17 +1,25 @@
 # laterbooks
 
-A personal Progressive Web App that reads book cover photos, extracts titles with OCR, and syncs missing books to your Goodreads **Want to Read** shelf.
+A personal Progressive Web App that reads book cover photos **on your phone**, extracts titles with browser OCR, and syncs missing books to your Goodreads **Want to Read** shelf.
 
-## Stack
+## Architecture
 
-- **Frontend:** SvelteKit, TypeScript, Tailwind CSS v4, installable PWA
-- **Backend:** FastAPI, PaddleOCR, Playwright
-- No database, authentication, or cloud storage — images are deleted immediately after processing
+```
+iPhone (PWA)                    Render (free tier)
+─────────────                   ──────────────────
+Select photos                   FastAPI + Playwright
+Tesseract.js OCR  ──titles──►   Goodreads automation
+(photos stay local)             (~300–400 MB RAM)
+```
+
+- **Frontend:** SvelteKit, TypeScript, Tailwind CSS v4, Tesseract.js, installable PWA
+- **Backend:** FastAPI, Playwright only (no server-side OCR)
+- No database, authentication, or cloud storage — **cover photos never leave your device**
 
 ## Prerequisites
 
-- Python 3.11+
-- Node.js 20+
+- Python 3.11+ (backend / session export script)
+- Node.js 20+ (frontend)
 - Goodreads account credentials
 
 ## Setup
@@ -24,7 +32,7 @@ python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
-cp .env.example .env        # add your Goodreads email and password
+cp .env.example .env        # add Goodreads credentials or storage state
 ```
 
 ### Frontend
@@ -53,19 +61,29 @@ Open http://localhost:5173. The dev server proxies `/api` to the backend.
 ## Usage
 
 1. Select up to 10 book cover photos from your gallery.
-2. Tap **Sync** — photos are processed one at a time.
-3. Watch live progress while OCR and Goodreads automation run.
+2. Tap **Read & sync** — OCR runs on your phone (first run downloads ~2 MB English model).
+3. Detected titles are sent to the backend; Goodreads automation runs server-side.
 4. Review the summary; correct any unknown titles manually.
-5. Photos are deleted from the server as soon as each one is processed.
 
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/jobs` | Upload photos, start processing |
+| `POST` | `/api/jobs` | Submit OCR titles, start Goodreads sync |
 | `GET` | `/api/jobs/{id}` | Poll job progress |
 | `POST` | `/api/jobs/{id}/manual` | Submit corrected titles |
 | `GET` | `/health` | Health check |
+
+### Create job body
+
+```json
+{
+  "photos": [
+    { "photo_index": 0, "titles": ["Dune"] },
+    { "photo_index": 1, "titles": [] }
+  ]
+}
+```
 
 ## Project structure
 
@@ -73,18 +91,31 @@ Open http://localhost:5173. The dev server proxies `/api` to the backend.
 backend/
   app/
     api/          # FastAPI routes
-    ocr/          # PaddleOCR title extraction
     goodreads/    # Playwright shelf automation
     jobs/         # In-memory job state & processor
     models/       # Pydantic schemas
 frontend/
   src/lib/
-    components/   # PhotoPicker, LiveProgress, etc.
+    ocr/          # Tesseract.js title extraction (client-side)
+    components/   # PhotoPicker, OcrProgress, LiveProgress, etc.
 ```
+
+## Goodreads session (recommended for Render)
+
+Headless login can fail. Export a session from your Mac:
+
+```bash
+cd backend
+source .venv/bin/activate
+playwright install chromium
+python scripts/export_goodreads_session.py
+```
+
+Copy the printed JSON into Render → `GOODREADS_STORAGE_STATE`.
 
 ## Deploy backend to Render
 
-The backend uses Docker because Playwright and PaddleOCR need Chromium and system libraries.
+The backend uses Docker for Playwright/Chromium. Without PaddleOCR it fits the **free 512 MB** tier.
 
 ### 1. Push to GitHub
 
@@ -96,33 +127,28 @@ Render deploys from a Git repo. Push this project to GitHub if you haven't alrea
 
 1. Go to [render.com](https://render.com) → **New** → **Blueprint**
 2. Connect your repo
-3. Render reads `render.yaml` at the repo root and creates the web service
+3. Render reads `render.yaml` at the repo root
 
 **Option B — Manual**
 
 1. **New** → **Web Service** → connect your repo
-2. Set **Runtime** to **Docker**
+2. **Runtime:** Docker
 3. **Dockerfile path:** `backend/Dockerfile`
 4. **Docker build context:** `backend`
-5. **Plan:** Free (512 MB RAM — may be tight for OCR + Chromium; upgrade if uploads crash)
+5. **Plan:** Free
 
-### 3. Set environment variables
-
-In the Render dashboard → your service → **Environment**:
+### 3. Environment variables
 
 | Variable | Value |
 |----------|--------|
 | `GOODREADS_EMAIL` | Your Goodreads login email |
 | `GOODREADS_PASSWORD` | Your Goodreads password |
-| `CORS_ORIGINS` | Your frontend URL(s), comma-separated, e.g. `https://laterbooks.pages.dev,http://localhost:5173` |
+| `GOODREADS_STORAGE_STATE` | JSON from session export script (preferred) |
+| `GOODREADS_LOGIN_METHOD` | `goodreads` |
+| `CORS_ORIGINS` | Your Netlify URL(s), comma-separated |
 | `PLAYWRIGHT_HEADLESS` | `true` |
-| `UPLOAD_DIR` | `/tmp/uploads` (already set in `render.yaml`) |
 
 ### 4. Deploy
-
-Render builds the Docker image and starts the service. First deploy takes several minutes (PaddleOCR + Chromium install).
-
-Your API URL will be something like `https://laterbooks-api.onrender.com`. Verify:
 
 ```bash
 curl https://laterbooks-api.onrender.com/health
@@ -131,54 +157,30 @@ curl https://laterbooks-api.onrender.com/health
 
 ### 5. Point the frontend at Render
 
-Build the frontend with your Render API URL:
-
 ```bash
 cd frontend
 VITE_API_URL=https://laterbooks-api.onrender.com npm run build
 ```
 
-Deploy the built static files wherever you host the PWA (Cloudflare Pages, Netlify, etc.).
-
 ## Deploy frontend to Netlify
 
-Netlify serves the PWA as a static site with HTTPS (required for iPhone install).
+### 1. Connect Netlify to GitHub
 
-### 1. Deploy backend first
+Netlify reads `netlify.toml` at the repo root.
 
-Follow the Render steps above and note your API URL, e.g. `https://laterbooks-api.onrender.com`.
-
-### 2. Connect Netlify to GitHub
-
-1. Go to [netlify.com](https://netlify.com) → **Add new site** → **Import an existing project**
-2. Connect the same GitHub repo
-3. Netlify reads `netlify.toml` at the repo root — no manual build settings needed
-
-### 3. Set environment variables
-
-In Netlify → **Site configuration** → **Environment variables**:
+### 2. Environment variables
 
 | Variable | Value |
 |----------|--------|
-| `VITE_API_URL` | Your Render API URL, e.g. `https://laterbooks-api.onrender.com` |
+| `VITE_API_URL` | Your Render API URL |
 
-`VITE_*` vars are baked in at build time — redeploy after changing this.
+Redeploy after changing `VITE_*` vars.
 
-### 4. Deploy
-
-Netlify runs `npm run build` in `frontend/` and publishes the `build/` folder.
-
-Your site will be at `https://something.netlify.app`. Verify the PWA loads.
-
-### 5. Wire up CORS on Render
-
-Back in Render → **Environment**, set:
+### 3. Wire up CORS on Render
 
 ```
-CORS_ORIGINS=https://something.netlify.app,http://localhost:5173
+CORS_ORIGINS=https://your-site.netlify.app,http://localhost:5173
 ```
-
-Render restarts automatically. Now the frontend can call the API.
 
 ### Full deploy order
 
@@ -190,14 +192,11 @@ Render restarts automatically. Now the frontend can call the API.
 
 ### Render notes
 
-- **Plan:** Free tier (512 MB RAM). First deploy may work; heavy OCR/Playwright jobs can OOM — upgrade to Standard if that happens.
-- **Cold starts:** Free/idle services spin down; first request after idle can take 30–60s.
-- **Job state:** In-memory — active jobs are lost if Render restarts or redeploys.
-- **Goodreads login:** If Amazon blocks headless login, you may need to debug locally with `PLAYWRIGHT_HEADLESS=false`; Render cannot run a visible browser.
-- **Disk:** Ephemeral — fine, since photos are deleted immediately after processing.
+- **Plan:** Free tier (512 MB) — Playwright-only backend should fit; first cold start may take 30–60s.
+- **Job state:** In-memory — active jobs are lost if Render restarts.
 
 ## Notes
 
-- Goodreads login uses Playwright against the live site; Amazon sign-in flows may require headed mode (`PLAYWRIGHT_HEADLESS=false`).
-- PaddleOCR downloads model weights on first run (~100 MB).
-- This is a personal utility — run it on your own machine, not as a public service.
+- OCR quality depends on cover photo clarity; manual review handles misses.
+- Tesseract.js downloads language data on first OCR run (needs network once).
+- This is a personal utility — run it for your own Goodreads account only.

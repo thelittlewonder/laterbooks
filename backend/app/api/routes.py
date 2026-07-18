@@ -9,7 +9,12 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from app.config import settings
 from app.jobs.manager import job_manager
 from app.jobs.processor import process_job, process_manual_entries
-from app.models.schemas import JobCreateResponse, JobProgress, ManualSubmitRequest
+from app.models.schemas import (
+    JobCreateResponse,
+    JobProgress,
+    JobStatus,
+    ManualSubmitRequest,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -58,16 +63,17 @@ async def submit_manual(
     body: ManualSubmitRequest,
     background_tasks: BackgroundTasks,
 ) -> JobProgress:
-    job = job_manager.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
     if not body.entries:
         raise HTTPException(status_code=400, detail="No entries provided")
 
+    # Recreate the job if it was lost to a server restart so manual review
+    # still works instead of 404-ing.
+    job_manager.ensure(job_id, total_photos=len(body.entries))
+
     entries = [(entry.corrected_title, entry.photo_index) for entry in body.entries]
-    job_manager.update(job_id, status=JobStatus.PROCESSING, message="Processing manual entries")
+    updated = job_manager.update(
+        job_id, status=JobStatus.PROCESSING, message="Processing manual entries"
+    )
     background_tasks.add_task(process_manual_entries, job_id, entries)
-    updated = job_manager.get(job_id)
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+    assert updated is not None
     return updated

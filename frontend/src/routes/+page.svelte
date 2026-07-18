@@ -17,7 +17,6 @@
 	let error = $state<string | null>(null);
 	let manualSubmitting = $state(false);
 	let syncMessage = $state('Preparing…');
-	let backendAwake = $state(false);
 	let stopPolling: (() => void) | null = null;
 
 	const isBusy = $derived(
@@ -27,13 +26,10 @@
 	const showStepper = $derived(phase !== 'idle');
 
 	onMount(() => {
-		void wakeBackend()
-			.then(() => {
-				backendAwake = true;
-			})
-			.catch(() => {
-				// Will retry when user taps Sync
-			});
+		// Prewarm the free-tier server so the first sync is faster.
+		void wakeBackend().catch(() => {
+			// Will retry before each action.
+		});
 	});
 
 	function reset() {
@@ -55,13 +51,10 @@
 		phase = 'uploading';
 
 		try {
-			if (!backendAwake) {
-				syncMessage = 'Waking up server… (Render free tier, first time can take ~60s)';
-				await wakeBackend((update) => {
-					syncMessage = update.message;
-				});
-				backendAwake = true;
-			}
+			syncMessage = 'Waking up server… (Render free tier can take ~60s)';
+			await wakeBackend((update) => {
+				syncMessage = update.message;
+			});
 
 			syncMessage = 'Uploading photos…';
 			const id = await createJob(files);
@@ -104,13 +97,10 @@
 
 		manualSubmitting = true;
 		phase = 'processing';
+		syncMessage = 'Waking up server… (Render free tier can take ~60s)';
 
 		try {
-			if (!backendAwake) {
-				await wakeBackend();
-				backendAwake = true;
-			}
-
+			await wakeBackend();
 			await submitManual(jobId, entries);
 			stopPolling?.();
 			stopPolling = pollJob(jobId, (update) => {

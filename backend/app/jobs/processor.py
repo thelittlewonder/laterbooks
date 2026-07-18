@@ -141,9 +141,8 @@ async def process_manual_entries(
 ) -> None:
     """Process manually corrected book titles."""
     goodreads = GoodreadsAutomation()
-    job = job_manager.get(job_id)
-    if job is None:
-        return
+    # Recreate the job if the server restarted since the original sync.
+    job = job_manager.ensure(job_id, total_photos=len(entries))
 
     try:
         job_manager.update(

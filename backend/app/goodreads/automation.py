@@ -30,9 +30,27 @@ _SESSION_COOKIE_NAMES = {"_session_id2", "loggedin", "session_id", "ccsid"}
 _MIN_QUERY_LEN = 4
 _MIN_MATCH_SCORE = 0.32
 
+# Small words that shouldn't decide a match. Missing/extra "the", "a", etc.
+# must not push a title below the threshold.
+_STOP_WORDS = frozenset(
+    {
+        "the", "a", "an", "of", "and", "or", "to", "in", "on", "at",
+        "for", "with", "from", "by", "as", "is", "its", "&",
+        # common non-English articles seen on covers
+        "de", "la", "le", "les", "el", "un", "una", "der", "die", "das",
+    }
+)
+
 
 def _normalize_title(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _core_tokens(text: str) -> list[str]:
+    """Significant words only — stop words dropped, but never everything."""
+    words = _normalize_title(text).split()
+    core = [word for word in words if word not in _STOP_WORDS]
+    return core or words
 
 
 def _title_match_score(query: str, candidate: str) -> float:
@@ -42,13 +60,26 @@ def _title_match_score(query: str, candidate: str) -> float:
         return 0.0
 
     sequence_score = SequenceMatcher(None, query_norm, candidate_norm).ratio()
-    query_tokens = set(query_norm.split())
-    candidate_tokens = set(candidate_norm.split())
+
+    query_tokens = set(_core_tokens(query))
+    candidate_tokens = set(_core_tokens(candidate))
     if not query_tokens or not candidate_tokens:
         return sequence_score
 
-    overlap = len(query_tokens & candidate_tokens) / max(len(query_tokens), 1)
-    return max(sequence_score, overlap)
+    intersection = len(query_tokens & candidate_tokens)
+    if intersection == 0:
+        return sequence_score
+
+    union = len(query_tokens | candidate_tokens)
+    jaccard = intersection / union if union else 0.0
+
+    # Containment: one title's significant words being a subset of the other
+    # scores high. Handles missing "the"/"a" ("Secret History" vs "The Secret
+    # History") and shortened titles ("Sapiens" vs "Sapiens: A Brief History").
+    smaller = min(len(query_tokens), len(candidate_tokens))
+    containment = intersection / smaller if smaller else 0.0
+
+    return max(sequence_score, jaccard, containment)
 
 
 def _configure_page(page: Page) -> None:

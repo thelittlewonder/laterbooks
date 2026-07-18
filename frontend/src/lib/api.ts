@@ -81,13 +81,28 @@ export async function wakeBackend(
 	);
 }
 
-async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+type ApiRequestInit = RequestInit & { noRetry?: boolean };
+
+async function apiFetch(path: string, init?: ApiRequestInit): Promise<Response> {
+	const { noRetry, ...fetchInit } = init ?? {};
 	try {
 		return await fetch(apiUrl(path), {
-			...init,
-			signal: init?.signal ?? AbortSignal.timeout(180_000)
+			...fetchInit,
+			signal: fetchInit.signal ?? AbortSignal.timeout(180_000)
 		});
 	} catch (err) {
+		// Likely a Render cold start — wake the server and retry once.
+		if (!noRetry) {
+			try {
+				await wakeBackend();
+				return await fetch(apiUrl(path), {
+					...fetchInit,
+					signal: fetchInit.signal ?? AbortSignal.timeout(180_000)
+				});
+			} catch {
+				// fall through to the friendly error below
+			}
+		}
 		throw new Error(networkErrorMessage(err));
 	}
 }
@@ -130,7 +145,7 @@ export async function createJob(photos: File[]): Promise<string> {
 }
 
 export async function getJob(jobId: string): Promise<JobProgress> {
-	const response = await apiFetch(`/api/jobs/${jobId}`);
+	const response = await apiFetch(`/api/jobs/${jobId}`, { noRetry: true });
 	if (!response.ok) {
 		throw new Error(await parseError(response));
 	}
